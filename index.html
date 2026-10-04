@@ -496,30 +496,31 @@
     }
 
     async function loadTasks() {
-      updateSyncStatus('กำลังซิงก์ข้อมูล...', 'amber');
-      try {
-        const res = await fetch(SHEETDB_URL);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          state.tasks = data.map(item => ({
-            ...item,
-            completed: String(item.completed) === 'true',
-            isRecurring: String(item.isRecurring) === 'true',
-            subtasks: item.subtasks ? (typeof item.subtasks === 'string' ? JSON.parse(item.subtasks) : item.subtasks) : []
-          }));
-        }
-        updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
-      } catch (err) {
-        console.error("โหลดข้อมูลล้มเหลว:", err);
-        updateSyncStatus('การเชื่อมต่อขัดข้อง', 'rose');
-      } finally {
-        renderTasks();
-        updateDashboardStats();
-        updateFloorPlanBadges();
-        updateChart();
-      }
+  updateSyncStatus('กำลังซิงก์ข้อมูล...', 'amber');
+  try {
+    const res = await fetch(SHEETDB_URL);
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      state.tasks = data.map(item => ({
+        ...item,
+        // รองรับทั้งหัวคอลัมน์ room และ roomId ใน Google Sheets
+        roomId: item.roomId || item.room || 'living_room',
+        completed: String(item.completed) === 'true',
+        isRecurring: String(item.isRecurring) === 'true',
+        subtasks: item.subtasks ? (typeof item.subtasks === 'string' ? JSON.parse(item.subtasks) : item.subtasks) : []
+      }));
     }
-
+    updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
+  } catch (err) {
+    console.error("โหลดข้อมูลล้มเหลว:", err);
+    updateSyncStatus('การเชื่อมต่อขัดข้อง', 'rose');
+  } finally {
+    renderTasks();
+    updateDashboardStats();
+    updateFloorPlanBadges();
+    updateChart();
+  }
+}
     function switchUser(userName) {
       state.currentUser = userName;
       document.getElementById('currentUserAvatar').innerText = userName.charAt(0);
@@ -775,16 +776,14 @@
       else el.classList.add('hidden');
     }
 
-    async function handleSaveTask(e) {
+  async function handleSaveTask(e) {
   e.preventDefault();
 
-  // ดึงค่า subtasks ปัจจุบันจากหน้าต่าง Modal
   const subtaskNodes = document.querySelectorAll('#subtaskInputsContainer input');
   const subtasks = Array.from(subtaskNodes)
     .map(input => input.value.trim())
     .filter(v => v !== '')
     .map((title, i) => {
-      // หากเป็น task เดิม พยายามคงสถานะ done เดิมไว้
       const existingTask = state.tasks.find(t => t.id === state.editingTaskId);
       const prevDone = existingTask?.subtasks?.[i]?.done || false;
       return { id: 'st_' + Date.now() + '_' + i, title: title, done: prevDone };
@@ -794,6 +793,7 @@
   const taskData = {
     title: document.getElementById('taskTitle').value.trim(),
     roomId: selectedRoom,
+    room: selectedRoom, // บันทึกเผื่อไว้ในกรณีที่ Google Sheets ใช้ชื่อคอลัมน์ room
     category: document.getElementById('taskCategory').value,
     dueDate: document.getElementById('taskDueDate').value || '',
     priority: document.getElementById('taskPriority').value,
@@ -808,14 +808,14 @@
 
   try {
     if (state.editingTaskId) {
-      // 1. อัปเดตในเครื่องทันที (Optimistic UI) ห้องและตัวเลขจะเปลี่ยนบนหน้าจอทันที
+      // อัปเดตในเครื่องทันที
       const idx = state.tasks.findIndex(t => t.id === state.editingTaskId);
       if (idx !== -1) {
-        state.tasks[idx] = {
-          ...state.tasks[idx],
-          ...taskData,
+        state.tasks[idx] = { 
+          ...state.tasks[idx], 
+          ...taskData, 
           isRecurring: taskData.isRecurring === 'true',
-          subtasks: subtasks
+          subtasks: subtasks 
         };
         renderTasks();
         updateDashboardStats();
@@ -823,7 +823,6 @@
         updateChart();
       }
 
-      // 2. ส่งไปอัปเดตที่ SheetDB
       await fetch(`${SHEETDB_URL}/id/${state.editingTaskId}`, {
         method: 'PATCH',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
@@ -837,7 +836,6 @@
         createdAt: new Date().toISOString()
       };
 
-      // เพิ่มลงหน้าจอทันที
       state.tasks.unshift({
         ...newTask,
         completed: false,
@@ -855,8 +853,10 @@
         body: JSON.stringify({ data: [newTask] })
       });
     }
+    updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
   } catch (err) {
     console.error("บันทึกไม่สำเร็จ:", err);
+    updateSyncStatus('บันทึกล้มเหลว', 'rose');
   } finally {
     await loadTasks();
   }
@@ -869,12 +869,13 @@ function editTask(taskId) {
   state.editingTaskId = taskId;
   document.getElementById('taskModalTitle').innerText = 'แก้ไขรายการงานบ้าน';
   document.getElementById('taskTitle').value = task.title;
-  
-  // กำหนดค่าห้องก่อน แล้วจึงโหลด Category ของห้องนั้น
-  document.getElementById('taskRoom').value = task.roomId;
-  updateCategoryDropdown(task.roomId);
-  
-  // เลือกหมวดหมู่เดิม (ถ้าไม่มี ให้สร้าง option ชั่วคราวเพื่อให้ค่าไม่หาย)
+
+  // อ่านห้องที่ถูกต้อง (รองรับทั้ง roomId และ room)
+  const currentRoomId = task.roomId || task.room || HOUSE_ROOMS[0].id;
+  document.getElementById('taskRoom').value = currentRoomId;
+  updateCategoryDropdown(currentRoomId);
+
+  // เลือกหมวดหมู่เดิม
   const catSelect = document.getElementById('taskCategory');
   if (!Array.from(catSelect.options).some(opt => opt.value === task.category)) {
     const opt = document.createElement('option');
