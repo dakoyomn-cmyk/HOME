@@ -223,7 +223,7 @@
 
             <div onclick="selectRoom('master_bed')" id="room_master_bed" class="room-zone col-span-7 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
               <div class="flex justify-between items-start">
-                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="bed-double" class="w-3 h-3 text-purple-400"></i> ห้องนอนหลัก</span>
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="bed-double" class="w-3.5 h-3.5 text-purple-400"></i> ห้องนอนหลัก</span>
                 <span id="badge_master_bed" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
               </div>
               <p class="text-[10px] text-slate-400">ดูดไรฝุ่น, Walk-in Closet</p>
@@ -475,6 +475,14 @@
 
     let zoneChartInstance = null;
 
+    // ฟังก์ชันช่วยจับคู่ห้อง (ป้องกันปัญหาใน Sheet เป็นชื่อภาษาไทย หรือเป็น ID หรือสะกดผิด)
+    function resolveRoomId(val) {
+      if (!val) return 'living_room';
+      const cleanVal = String(val).trim();
+      const match = HOUSE_ROOMS.find(r => r.id === cleanVal || r.name === cleanVal);
+      return match ? match.id : 'living_room';
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
       lucide.createIcons();
       initRoomDropdowns();
@@ -496,31 +504,32 @@
     }
 
     async function loadTasks() {
-  updateSyncStatus('กำลังซิงก์ข้อมูล...', 'amber');
-  try {
-    const res = await fetch(SHEETDB_URL);
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      state.tasks = data.map(item => ({
-        ...item,
-        // รองรับทั้งหัวคอลัมน์ room และ roomId ใน Google Sheets
-        roomId: item.roomId || item.room || 'living_room',
-        completed: String(item.completed) === 'true',
-        isRecurring: String(item.isRecurring) === 'true',
-        subtasks: item.subtasks ? (typeof item.subtasks === 'string' ? JSON.parse(item.subtasks) : item.subtasks) : []
-      }));
+      updateSyncStatus('กำลังซิงก์ข้อมูล...', 'amber');
+      try {
+        const res = await fetch(SHEETDB_URL);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          state.tasks = data.map(item => ({
+            ...item,
+            // ค้นหาห้องจากทั้ง roomId, room หรือชื่อห้องภาษาไทย
+            roomId: resolveRoomId(item.roomId || item.room),
+            completed: String(item.completed) === 'true',
+            isRecurring: String(item.isRecurring) === 'true',
+            subtasks: item.subtasks ? (typeof item.subtasks === 'string' ? JSON.parse(item.subtasks) : item.subtasks) : []
+          }));
+        }
+        updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
+      } catch (err) {
+        console.error("โหลดข้อมูลล้มเหลว:", err);
+        updateSyncStatus('การเชื่อมต่อขัดข้อง', 'rose');
+      } finally {
+        renderTasks();
+        updateDashboardStats();
+        updateFloorPlanBadges();
+        updateChart();
+      }
     }
-    updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
-  } catch (err) {
-    console.error("โหลดข้อมูลล้มเหลว:", err);
-    updateSyncStatus('การเชื่อมต่อขัดข้อง', 'rose');
-  } finally {
-    renderTasks();
-    updateDashboardStats();
-    updateFloorPlanBadges();
-    updateChart();
-  }
-}
+
     function switchUser(userName) {
       state.currentUser = userName;
       document.getElementById('currentUserAvatar').innerText = userName.charAt(0);
@@ -533,8 +542,9 @@
     }
 
     function updateCategoryDropdown(roomId) {
+      const validRoomId = resolveRoomId(roomId);
       const categorySelect = document.getElementById('taskCategory');
-      const cats = state.categories[roomId] || [];
+      const cats = state.categories[validRoomId] || [];
       categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
     }
 
@@ -657,7 +667,7 @@
       emptyState.classList.add('hidden');
 
       container.innerHTML = filtered.map(task => {
-        const room = HOUSE_ROOMS.find(r => r.id === task.roomId) || { name: 'ไม่ระบุห้อง' };
+        const room = HOUSE_ROOMS.find(r => r.id === task.roomId) || { name: 'ห้องนั่งเล่น' };
         const isOverdue = !task.completed && task.dueDate && task.dueDate < today;
         const isToday = !task.completed && task.dueDate && task.dueDate === today;
 
@@ -741,12 +751,9 @@
       document.getElementById('subtaskInputsContainer').innerHTML = '';
       toggleRecurringOptions(false);
 
-      if (roomId) {
-        document.getElementById('taskRoom').value = roomId;
-        updateCategoryDropdown(roomId);
-      } else {
-        updateCategoryDropdown(document.getElementById('taskRoom').value);
-      }
+      const targetRoom = resolveRoomId(roomId || document.getElementById('taskRoom').value);
+      document.getElementById('taskRoom').value = targetRoom;
+      updateCategoryDropdown(targetRoom);
 
       document.getElementById('taskModal').classList.remove('hidden');
       lucide.createIcons();
@@ -776,140 +783,152 @@
       else el.classList.add('hidden');
     }
 
-  async function handleSaveTask(e) {
-  e.preventDefault();
+    async function handleSaveTask(e) {
+      e.preventDefault();
 
-  const subtaskNodes = document.querySelectorAll('#subtaskInputsContainer input');
-  const subtasks = Array.from(subtaskNodes)
-    .map(input => input.value.trim())
-    .filter(v => v !== '')
-    .map((title, i) => {
-      const existingTask = state.tasks.find(t => t.id === state.editingTaskId);
-      const prevDone = existingTask?.subtasks?.[i]?.done || false;
-      return { id: 'st_' + Date.now() + '_' + i, title: title, done: prevDone };
-    });
+      const subtaskNodes = document.querySelectorAll('#subtaskInputsContainer input');
+      const subtasks = Array.from(subtaskNodes)
+        .map(input => input.value.trim())
+        .filter(v => v !== '')
+        .map((title, i) => {
+          const existingTask = state.tasks.find(t => t.id === state.editingTaskId);
+          const prevDone = existingTask?.subtasks?.[i]?.done || false;
+          return { id: 'st_' + Date.now() + '_' + i, title: title, done: prevDone };
+        });
 
-  const selectedRoom = document.getElementById('taskRoom').value;
-  const taskData = {
-    title: document.getElementById('taskTitle').value.trim(),
-    roomId: selectedRoom,
-    room: selectedRoom, // บันทึกเผื่อไว้ในกรณีที่ Google Sheets ใช้ชื่อคอลัมน์ room
-    category: document.getElementById('taskCategory').value,
-    dueDate: document.getElementById('taskDueDate').value || '',
-    priority: document.getElementById('taskPriority').value,
-    isRecurring: document.getElementById('taskIsRecurring').checked ? 'true' : 'false',
-    recurInterval: document.getElementById('taskRecurInterval').value,
-    assignee: document.getElementById('taskAssignee').value,
-    subtasks: JSON.stringify(subtasks)
-  };
+      const selectedRoom = resolveRoomId(document.getElementById('taskRoom').value);
+      const roomObj = HOUSE_ROOMS.find(r => r.id === selectedRoom);
 
-  closeTaskModal();
-  updateSyncStatus('กำลังบันทึกลง Sheets...', 'amber');
-
-  try {
-    if (state.editingTaskId) {
-      // อัปเดตในเครื่องทันที
-      const idx = state.tasks.findIndex(t => t.id === state.editingTaskId);
-      if (idx !== -1) {
-        state.tasks[idx] = { 
-          ...state.tasks[idx], 
-          ...taskData, 
-          isRecurring: taskData.isRecurring === 'true',
-          subtasks: subtasks 
-        };
-        renderTasks();
-        updateDashboardStats();
-        updateFloorPlanBadges();
-        updateChart();
-      }
-
-      await fetch(`${SHEETDB_URL}/id/${state.editingTaskId}`, {
-        method: 'PATCH',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: taskData })
-      });
-    } else {
-      const newTask = {
-        id: 'task_' + Date.now(),
-        ...taskData,
-        completed: 'false',
-        createdAt: new Date().toISOString()
+      // ส่งทั้ง roomId, room, และชื่อห้องภาษาไทย เพื่อให้ Sheets ทุกโครงสร้างรับค่าตรงกัน
+      const taskData = {
+        title: document.getElementById('taskTitle').value.trim(),
+        roomId: selectedRoom,
+        room: selectedRoom,
+        roomName: roomObj ? roomObj.name : '',
+        category: document.getElementById('taskCategory').value,
+        dueDate: document.getElementById('taskDueDate').value || '',
+        priority: document.getElementById('taskPriority').value,
+        isRecurring: document.getElementById('taskIsRecurring').checked ? 'true' : 'false',
+        recurInterval: document.getElementById('taskRecurInterval').value,
+        assignee: document.getElementById('taskAssignee').value,
+        subtasks: JSON.stringify(subtasks)
       };
 
-      state.tasks.unshift({
-        ...newTask,
-        completed: false,
-        isRecurring: newTask.isRecurring === 'true',
-        subtasks: subtasks
-      });
+      closeTaskModal();
+      updateSyncStatus('กำลังบันทึกลง Sheets...', 'amber');
+
+      try {
+        if (state.editingTaskId) {
+          // 1. อัปเดตในเครื่องทันที (UI เปลี่ยนทันที 100%)
+          const idx = state.tasks.findIndex(t => t.id === state.editingTaskId);
+          if (idx !== -1) {
+            state.tasks[idx] = { 
+              ...state.tasks[idx], 
+              ...taskData, 
+              isRecurring: taskData.isRecurring === 'true',
+              subtasks: subtasks 
+            };
+            renderTasks();
+            updateDashboardStats();
+            updateFloorPlanBadges();
+            updateChart();
+          }
+
+          // 2. ส่งไปอัปเดตที่ SheetDB
+          await fetch(`${SHEETDB_URL}/id/${state.editingTaskId}`, {
+            method: 'PATCH',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: taskData })
+          });
+        } else {
+          const newTask = {
+            id: 'task_' + Date.now(),
+            ...taskData,
+            completed: 'false',
+            createdAt: new Date().toISOString()
+          };
+
+          state.tasks.unshift({
+            ...newTask,
+            completed: false,
+            isRecurring: newTask.isRecurring === 'true',
+            subtasks: subtasks
+          });
+          renderTasks();
+          updateDashboardStats();
+          updateFloorPlanBadges();
+          updateChart();
+
+          await fetch(SHEETDB_URL, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [newTask] })
+          });
+        }
+        updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
+      } catch (err) {
+        console.error("บันทึกไม่สำเร็จ:", err);
+        updateSyncStatus('บันทึกล้มเหลว', 'rose');
+      }
+    }
+
+    function editTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      state.editingTaskId = taskId;
+      document.getElementById('taskModalTitle').innerText = 'แก้ไขรายการงานบ้าน';
+      document.getElementById('taskTitle').value = task.title;
+
+      // แก้ไขปัญหา Dropdown ห้องไม่ตรง
+      const validRoomId = resolveRoomId(task.roomId || task.room);
+      document.getElementById('taskRoom').value = validRoomId;
+      updateCategoryDropdown(validRoomId);
+
+      // เลือกหมวดหมู่เดิม
+      const catSelect = document.getElementById('taskCategory');
+      if (task.category && !Array.from(catSelect.options).some(opt => opt.value === task.category)) {
+        const opt = document.createElement('option');
+        opt.value = task.category;
+        opt.innerText = task.category;
+        catSelect.appendChild(opt);
+      }
+      if (task.category) catSelect.value = task.category;
+
+      document.getElementById('taskDueDate').value = task.dueDate || '';
+      document.getElementById('taskPriority').value = task.priority || 'medium';
+      document.getElementById('taskAssignee').value = task.assignee || 'ส่วนกลาง';
+      document.getElementById('taskIsRecurring').checked = !!task.isRecurring;
+      toggleRecurringOptions(!!task.isRecurring);
+      if (task.recurInterval) document.getElementById('taskRecurInterval').value = task.recurInterval;
+
+      const container = document.getElementById('subtaskInputsContainer');
+      container.innerHTML = '';
+      if (task.subtasks && Array.isArray(task.subtasks)) {
+        task.subtasks.forEach(st => addSubtaskInput(typeof st === 'string' ? st : st.title));
+      }
+
+      document.getElementById('taskModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    async function deleteTask(taskId) {
+      if (!confirm('ยืนยันลบงานนี้ออกจากระบบ?')) return;
+      
+      // ลบจากในเครื่องทันที
+      state.tasks = state.tasks.filter(t => t.id !== taskId);
       renderTasks();
       updateDashboardStats();
       updateFloorPlanBadges();
       updateChart();
 
-      await fetch(SHEETDB_URL, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: [newTask] })
-      });
-    }
-    updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
-  } catch (err) {
-    console.error("บันทึกไม่สำเร็จ:", err);
-    updateSyncStatus('บันทึกล้มเหลว', 'rose');
-  } finally {
-    await loadTasks();
-  }
-}
-
-function editTask(taskId) {
-  const task = state.tasks.find(t => t.id === taskId);
-  if (!task) return;
-
-  state.editingTaskId = taskId;
-  document.getElementById('taskModalTitle').innerText = 'แก้ไขรายการงานบ้าน';
-  document.getElementById('taskTitle').value = task.title;
-
-  // อ่านห้องที่ถูกต้อง (รองรับทั้ง roomId และ room)
-  const currentRoomId = task.roomId || task.room || HOUSE_ROOMS[0].id;
-  document.getElementById('taskRoom').value = currentRoomId;
-  updateCategoryDropdown(currentRoomId);
-
-  // เลือกหมวดหมู่เดิม
-  const catSelect = document.getElementById('taskCategory');
-  if (!Array.from(catSelect.options).some(opt => opt.value === task.category)) {
-    const opt = document.createElement('option');
-    opt.value = task.category;
-    opt.innerText = task.category;
-    catSelect.appendChild(opt);
-  }
-  catSelect.value = task.category;
-
-  document.getElementById('taskDueDate').value = task.dueDate || '';
-  document.getElementById('taskPriority').value = task.priority || 'medium';
-  document.getElementById('taskAssignee').value = task.assignee || 'ส่วนกลาง';
-  document.getElementById('taskIsRecurring').checked = !!task.isRecurring;
-  toggleRecurringOptions(!!task.isRecurring);
-  if (task.recurInterval) document.getElementById('taskRecurInterval').value = task.recurInterval;
-
-  const container = document.getElementById('subtaskInputsContainer');
-  container.innerHTML = '';
-  if (task.subtasks && Array.isArray(task.subtasks)) {
-    task.subtasks.forEach(st => addSubtaskInput(typeof st === 'string' ? st : st.title));
-  }
-
-  document.getElementById('taskModal').classList.remove('hidden');
-  lucide.createIcons();
-}
-    async function deleteTask(taskId) {
-      if (!confirm('ยืนยันลบงานนี้ออกจากระบบ?')) return;
       updateSyncStatus('กำลังลบข้อมูล...', 'amber');
       try {
         await fetch(`${SHEETDB_URL}/id/${taskId}`, { method: 'DELETE' });
+        updateSyncStatus('Google Sheets (เชื่อมต่อแล้ว)', 'emerald');
       } catch (err) {
         console.error("ลบข้อมูลไม่สำเร็จ:", err);
-      } finally {
-        await loadTasks();
+        updateSyncStatus('ลบข้อมูลล้มเหลว', 'rose');
       }
     }
 
@@ -956,6 +975,7 @@ function editTask(taskId) {
             id: 'task_' + Date.now(),
             title: task.title,
             roomId: task.roomId,
+            room: task.roomId,
             category: task.category,
             dueDate: nextDueDate,
             priority: task.priority,
