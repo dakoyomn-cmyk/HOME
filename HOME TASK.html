@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home - ToDo & Dashboard</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js for Dashboard Visuals -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts (Prompt & Inter) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Prompt', 'Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Prompt', sans-serif; }
+    .blueprint-grid {
+      background-image: radial-gradient(rgba(59, 130, 246, 0.15) 1px, transparent 0);
+      background-size: 16px 16px;
+    }
+    .room-zone {
+      transition: all 0.25s ease-in-out;
+      cursor: pointer;
+    }
+    .room-zone:hover {
+      filter: brightness(1.08);
+      transform: scale(1.01);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- ================= TOP NAVIGATION & USER PROFILE SWITCHER ================= -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <!-- Logo & System Status -->
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 text-white p-2.5 rounded-xl shadow-md flex items-center justify-center">
+          <i data-lucide="home" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight text-slate-900">ระบบจัดการงานบ้านร่วมกัน</h1>
+          <div class="flex items-center gap-2">
+            <span id="syncStatusBadge" class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span id="syncStatusText">Local Storage (พร้อมใช้งาน)</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Switcher & Config Button -->
+      <div class="flex items-center gap-3">
+        <!-- Family Member Selector -->
+        <div class="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
+          <div id="currentUserAvatar" class="w-8 h-8 rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold text-sm ml-1">
+            พ
+          </div>
+          <select id="userSelector" onchange="switchUser(this.value)" class="bg-transparent text-sm font-medium text-slate-700 px-2.5 py-1 focus:outline-none cursor-pointer">
+            <option value="พ่อ">พ่อ (Admin)</option>
+            <option value="แม่">แม่</option>
+            <option value="ลูกคนโต">ลูกคนโต</option>
+            <option value="ลูกคนเล็ก">ลูกคนเล็ก</option>
+            <option value="ส่วนกลาง">ส่วนกลาง (ทุกคน)</option>
+          </select>
+        </div>
+
+        <button onclick="openConfigModal()" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all" title="ตั้งค่าการเชื่อมต่อ Firebase">
+          <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT ================= -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+    <!-- KPI Metrics Dashboard -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+          <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs font-medium text-slate-500">ความสำเร็จโดยรวม</p>
+          <h3 id="statCompletionRate" class="text-2xl font-bold text-slate-800">0%</h3>
+          <p id="statProgressRatio" class="text-[11px] text-slate-400">เสร็จ 0 จาก 0 งาน</p>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+          <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs font-medium text-slate-500">เกินกำหนด (Overdue)</p>
+          <h3 id="statOverdueCount" class="text-2xl font-bold text-rose-600">0</h3>
+          <p class="text-[11px] text-slate-400">ต้องรีบจัดการทันที</p>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+          <i data-lucide="calendar" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs font-medium text-slate-500">ต้องทำวันนี้</p>
+          <h3 id="statTodayCount" class="text-2xl font-bold text-amber-600">0</h3>
+          <p class="text-[11px] text-slate-400">งานประจำวัน</p>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <i data-lucide="repeat" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs font-medium text-slate-500">งานที่ทำซ้ำ (Routine)</p>
+          <h3 id="statRecurringCount" class="text-2xl font-bold text-indigo-600">0</h3>
+          <p class="text-[11px] text-slate-400">ระบบสร้างรอบใหม่อัตโนมัติ</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive House Map & Analytical Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- Interactive Floor Plan (Left: 7 Cols) -->
+      <div class="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="font-bold text-base text-slate-900 flex items-center gap-2">
+              <i data-lucide="map" class="w-5 h-5 text-blue-600"></i>
+              แผนผังแปลนบ้าน 10 โซน (Interactive Blueprint)
+            </h2>
+            <p class="text-xs text-slate-500">คลิกที่แต่ละห้องเพื่อดูรายการงาน หรือคลิกวางแผนงานทันที</p>
+          </div>
+          <!-- Blueprint Legend -->
+          <div class="flex items-center gap-3 text-xs">
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> สะอาดเรียบร้อย</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400"></span> มีงานค้าง</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-rose-500"></span> มีงานด่วน/เกินกำหนด</span>
+          </div>
+        </div>
+
+        <!-- Blueprint Canvas Container -->
+        <div class="relative bg-slate-900 rounded-xl p-4 blueprint-grid flex-1 min-h-[380px] flex items-center justify-center overflow-hidden border border-slate-800">
+          
+          <!-- Custom Uploaded Plan Backdrop (Optional) -->
+          <img id="customFloorPlanImg" src="" alt="Custom Floor Plan" class="hidden absolute inset-0 w-full h-full object-contain pointer-events-none opacity-40">
+
+          <!-- 2D House Blueprint Layout -->
+          <div class="w-full max-w-2xl grid grid-cols-12 gap-2 text-xs font-medium select-none z-10">
+            
+            <!-- Floor 1 Label -->
+            <div class="col-span-12 flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 mb-1">
+              <span class="font-bold tracking-wider uppercase text-[11px] text-blue-400">ชั้นที่ 1 (Ground Floor)</span>
+              <button onclick="uploadFloorPlanPrompt()" class="text-slate-400 hover:text-white text-[11px] flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                <i data-lucide="image" class="w-3 h-3"></i> อัปโหลดรูปแปลนบ้าน
+              </button>
+            </div>
+
+            <!-- 1. Living Room -->
+            <div onclick="selectRoom('living_room')" id="room_living_room" class="room-zone col-span-7 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-3 flex flex-col justify-between h-24 relative">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 flex items-center gap-1.5"><i data-lucide="sofa" class="w-3.5 h-3.5 text-blue-400"></i> ห้องนั่งเล่น</span>
+                <span id="badge_living_room" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400 line-clamp-1">เฟอร์นิเจอร์, สายไฟ, แอร์</p>
+            </div>
+
+            <!-- 2. Kitchen -->
+            <div onclick="selectRoom('kitchen')" id="room_kitchen" class="room-zone col-span-5 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-3 flex flex-col justify-between h-24 relative">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 flex items-center gap-1.5"><i data-lucide="utensils" class="w-3.5 h-3.5 text-amber-400"></i> ห้องครัว</span>
+                <span id="badge_kitchen" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400 line-clamp-1">เตา/ฮู้ด, ตู้เย็น, ซิงค์</p>
+            </div>
+
+            <!-- 3. Powder Room -->
+            <div onclick="selectRoom('downstairs_bath')" id="room_downstairs_bath" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="bath" class="w-3 h-3 text-cyan-400"></i> ห้องน้ำข้างล่าง</span>
+                <span id="badge_downstairs_bath" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400">สุขภัณฑ์, เติมของใช้</p>
+            </div>
+
+            <!-- 4. Home Office -->
+            <div onclick="selectRoom('office')" id="room_office" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="laptop" class="w-3 h-3 text-indigo-400"></i> ห้องทำงาน</span>
+                <span id="badge_office" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400">โต๊ะทำงาน, เอกสาร</p>
+            </div>
+
+            <!-- 10. Laundry & Yard -->
+            <div onclick="selectRoom('laundry')" id="room_laundry" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="washing-machine" class="w-3 h-3 text-sky-400"></i> ซักล้าง ตากผ้า</span>
+                <span id="badge_laundry" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400">เครื่องซัก, ตะไคร่น้ำ</p>
+            </div>
+
+            <!-- Floor 2 Label -->
+            <div class="col-span-12 flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 mt-2 mb-1">
+              <span class="font-bold tracking-wider uppercase text-[11px] text-purple-400">ชั้นที่ 2 (Upper Floor)</span>
+            </div>
+
+            <!-- 8. Master Bedroom -->
+            <div onclick="selectRoom('master_bed')" id="room_master_bed" class="room-zone col-span-7 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="bed-double" class="w-3 h-3 text-purple-400"></i> ห้องนอนหลัก</span>
+                <span id="badge_master_bed" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400">ดูดไรฝุ่น, Walk-in Closet</p>
+            </div>
+
+            <!-- 9. Master Bathroom -->
+            <div onclick="selectRoom('master_bath')" id="room_master_bath" class="room-zone col-span-5 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2.5 flex flex-col justify-between h-20">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px] flex items-center gap-1"><i data-lucide="droplet" class="w-3 h-3 text-purple-300"></i> ห้องน้ำหลัก</span>
+                <span id="badge_master_bath" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[10px] text-slate-400">กระจก, ยาแนว, ท่อดักกลิ่น</p>
+            </div>
+
+            <!-- 5. Guest Bed 1 -->
+            <div onclick="selectRoom('guest_bed_1')" id="room_guest_bed_1" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2 flex flex-col justify-between h-18">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px]">ห้องนอนแขก 1</span>
+                <span id="badge_guest_bed_1" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[9px] text-slate-400">เครื่องนอน, ฝุ่น</p>
+            </div>
+
+            <!-- 6. Guest Bed 2 -->
+            <div onclick="selectRoom('guest_bed_2')" id="room_guest_bed_2" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2 flex flex-col justify-between h-18">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px]">ห้องนอนแขก 2</span>
+                <span id="badge_guest_bed_2" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[9px] text-slate-400">แอร์, ม่าน, ของต้อนรับ</p>
+            </div>
+
+            <!-- 7. Guest Bath -->
+            <div onclick="selectRoom('guest_bath')" id="room_guest_bath" class="room-zone col-span-4 bg-slate-800/90 text-slate-200 border-2 border-slate-700 rounded-lg p-2 flex flex-col justify-between h-18">
+              <div class="flex justify-between items-start">
+                <span class="font-semibold text-slate-100 text-[11px]">ห้องน้ำแขก</span>
+                <span id="badge_guest_bath" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-300">0</span>
+              </div>
+              <p class="text-[9px] text-slate-400">กระจก, ท่อระบายผม</p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics Breakdown (Right: 5 Cols) -->
+      <div class="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        <div>
+          <h2 class="font-bold text-base text-slate-900 mb-1 flex items-center gap-2">
+            <i data-lucide="pie-chart" class="w-5 h-5 text-indigo-600"></i>
+            สถิติภาระงานแยกตามโซน
+          </h2>
+          <p class="text-xs text-slate-500 mb-4">แสดงสัดส่วนงานที่ยังค้างอยู่ในแต่ละพื้นที่</p>
+          <div class="h-56 relative flex items-center justify-center">
+            <canvas id="zoneChart"></canvas>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <span>กรองตามห้องปัจจุบัน:</span>
+          <span id="activeFilterLabel" class="font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">แสดงทั้งหมด (10 ห้อง)</span>
+          <button onclick="clearRoomFilter()" class="text-slate-400 hover:text-slate-600 underline">ล้างตัวกรอง</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= TASK MANAGEMENT TOOLBAR & LIST ================= -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-5">
+      
+      <!-- Toolbar: Title, Search, Filter & New Task Button -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+            <i data-lucide="check-square" class="w-5 h-5 text-blue-600"></i>
+            รายการงานที่ต้องทำ (Tasks & Chores)
+          </h2>
+          <p class="text-xs text-slate-500">มี Subtask, วันกำหนดส่ง, งานทำซ้ำ และแนบรูปภาพอ้างอิงได้</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Quick Status Tabs -->
+          <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-medium">
+            <button onclick="setFilterStatus('all')" id="tab_all" class="px-3 py-1.5 rounded-lg bg-white shadow-sm text-slate-800">ทั้งหมด</button>
+            <button onclick="setFilterStatus('pending')" id="tab_pending" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900">ค้างทำ</button>
+            <button onclick="setFilterStatus('completed')" id="tab_completed" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900">เสร็จแล้ว</button>
+          </div>
+
+          <!-- Add Task Button -->
+          <button onclick="openTaskModal()" class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-xl shadow-sm transition-all">
+            <i data-lucide="plus" class="w-4 h-4"></i> เพิ่มงานใหม่
+          </button>
+        </div>
+      </div>
+
+      <!-- Task List Container -->
+      <div id="taskListContainer" class="space-y-3">
+        <!-- Rendered Dynamically via JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="hidden text-center py-12">
+        <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+          <i data-lucide="sparkles" class="w-8 h-8 text-emerald-500"></i>
+        </div>
+        <h3 class="text-slate-700 font-semibold">บ้านสะอาดเรียบร้อยทุกจุดแล้ว!</h3>
+        <p class="text-xs text-slate-400 mt-1">ไม่มีงานค้างอยู่ในพื้นที่ที่เลือกในขณะนี้</p>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= TASK MODAL (ADD / EDIT) ================= -->
+  <div id="taskModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 id="taskModalTitle" class="font-bold text-lg text-slate-800">เพิ่มรายการงานบ้านใหม่</h3>
+        <button onclick="closeTaskModal()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="taskForm" onsubmit="handleSaveTask(event)" class="space-y-4 text-sm">
+        
+        <!-- Task Title -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">ชื่องานที่ต้องทำ *</label>
+          <input type="text" id="taskTitle" required placeholder="เช่น ล้างฟิลเตอร์แอร์, ขัดคราบกระจกห้องน้ำ" 
+                 class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </div>
+
+        <!-- Room Zone & Category Selector -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">พื้นที่ / ห้อง *</label>
+            <select id="taskRoom" onchange="updateCategoryDropdown(this.value)" required class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">หมวดหมู่ (Category) *</label>
+            <div class="flex gap-1.5">
+              <select id="taskCategory" required class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                <!-- Dynamically populated based on room -->
+              </select>
+              <button type="button" onclick="promptAddCategory()" class="p-2 border border-slate-300 rounded-xl text-slate-500 hover:bg-slate-100" title="เพิ่ม Category ใหม่">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Due Date & Priority -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">วันกำหนดส่ง (Due Date)</label>
+            <input type="date" id="taskDueDate" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">ความสำคัญ (Priority)</label>
+            <select id="taskPriority" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+              <option value="low">ปกติ (Low)</option>
+              <option value="medium" selected>ปานกลาง (Medium)</option>
+              <option value="high">ด่วน / สำคัญมาก (High)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Recurring Task Feature -->
+        <div class="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+              <i data-lucide="repeat" class="w-4 h-4 text-indigo-600"></i> ทำซ้ำเป็นประจำ (Recurring)
+            </span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="taskIsRecurring" onchange="toggleRecurringOptions(this.checked)" class="sr-only peer">
+              <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+          <div id="recurringIntervalWrapper" class="hidden pt-1">
+            <label class="block text-[11px] text-indigo-700 mb-1">ความถี่ในการทำซ้ำ:</label>
+            <select id="taskRecurInterval" class="w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-lg bg-white focus:outline-none">
+              <option value="daily">ทุกวัน (Daily)</option>
+              <option value="weekly" selected>ทุกสัปดาห์ (Weekly)</option>
+              <option value="biweekly">ทุก 2 สัปดาห์ (Every 2 Weeks)</option>
+              <option value="monthly">ทุกเดือน (Monthly)</option>
+              <option value="quarterly">ทุก 3 เดือน (Quarterly - สำหรับแอร์/ล้างเครื่อง)</option>
+            </select>
+            <p class="text-[10px] text-indigo-600 mt-1">* เมื่อกดเสร็จสิ้น ระบบจะสร้างรอบงานถัดไปตามความถี่นี้ให้อัตโนมัติ</p>
+          </div>
+        </div>
+
+        <!-- Assignee Selection -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">ผู้รับผิดชอบ (Assignee)</label>
+          <select id="taskAssignee" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+            <option value="ส่วนกลาง">ส่วนกลาง (ใครทำก็ได้)</option>
+            <option value="พ่อ">พ่อ</option>
+            <option value="แม่">แม่</option>
+            <option value="ลูกคนโต">ลูกคนโต</option>
+            <option value="ลูกคนเล็ก">ลูกคนเล็ก</option>
+          </select>
+        </div>
+
+        <!-- Subtasks Section -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Subtasks (ขั้นตอนย่อย)</label>
+          <div id="subtaskInputsContainer" class="space-y-2 mb-2">
+            <!-- Dynamic Subtask Row -->
+          </div>
+          <button type="button" onclick="addSubtaskInput()" class="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> เพิ่มข้อย่อย (Subtask)
+          </button>
+        </div>
+
+        <!-- Image Attachment -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">แนบรูปถ่ายสภาพหน้างาน / จุดที่ต้องซ่อม (รูปภาพ)</label>
+          <input type="file" id="taskImageFile" accept="image/*" onchange="previewTaskImage(event)" class="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+          <div id="taskImagePreviewContainer" class="mt-2 hidden relative w-28 h-28 rounded-lg overflow-hidden border border-slate-200">
+            <img id="taskImagePreview" src="" class="w-full h-full object-cover">
+            <button type="button" onclick="removeTaskImage()" class="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 shadow">
+              <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button type="button" onclick="closeTaskModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium">ยกเลิก</button>
+          <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm">บันทึกงาน</button>
+        </div>
+
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ================= FIREBASE CONFIG MODAL ================= -->
+  <div id="configModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-base text-slate-800 flex items-center gap-2">
+          <i data-lucide="database" class="w-5 h-5 text-amber-500"></i> เชื่อมต่อ Firebase เพื่อ Sync คนในบ้าน
+        </h3>
+        <button onclick="closeConfigModal()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-600 space-y-2">
+        <p>หากต้องการให้ทุกคนในบ้านเปิดมือถือแล้วเห็นงานอัปเดตแบบเรียลไทม์พร้อมกัน ให้สร้าง Firebase Project (ฟรี) และนำ Config JSON หรือ Object มาวางที่นี่:</p>
+      </div>
+
+      <textarea id="firebaseConfigInput" rows="6" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "your-app.firebaseapp.com",
+  "projectId": "your-app",
+  "storageBucket": "...",
+  "messagingSenderId": "...",
+  "appId": "..."
+}' class="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+
+      <div class="flex items-center justify-between pt-2">
+        <button onclick="clearFirebaseConfig()" class="text-xs text-rose-600 hover:underline">ล้างการเชื่อมต่อ (กลับไปใช้ Local)</button>
+        <div class="flex gap-2">
+          <button onclick="closeConfigModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg">ปิด</button>
+          <button onclick="saveFirebaseConfig()" class="px-4 py-1.5 text-xs bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700">บันทึก & ซิงก์</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden File Input for Custom Floor Plan -->
+  <input type="file" id="floorPlanFileInput" accept="image/*" class="hidden" onchange="handleFloorPlanUpload(event)">
+
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
+  <script>
+    // -------------------------------------------------------------
+    // 1. DATA DEFINITIONS (10 ZONES & CURATED CATEGORIES)
+    // -------------------------------------------------------------
+    const HOUSE_ROOMS = [
+      { id: 'living_room', name: 'ห้องนั่งเล่น', floor: 1, icon: 'sofa' },
+      { id: 'kitchen', name: 'ห้องครัว', floor: 1, icon: 'utensils' },
+      { id: 'downstairs_bath', name: 'ห้องน้ำข้างล่าง', floor: 1, icon: 'bath' },
+      { id: 'office', name: 'ห้องทำงาน', floor: 1, icon: 'laptop' },
+      { id: 'guest_bed_1', name: 'ห้องนอนแขก 1', floor: 2, icon: 'bed' },
+      { id: 'guest_bed_2', name: 'ห้องนอนแขก 2', floor: 2, icon: 'bed' },
+      { id: 'guest_bath', name: 'ห้องน้ำแขก', floor: 2, icon: 'shower-head' },
+      { id: 'master_bed', name: 'ห้องนอนหลัก', floor: 2, icon: 'bed-double' },
+      { id: 'master_bath', name: 'ห้องน้ำหลัก', floor: 2, icon: 'droplet' },
+      { id: 'laundry', name: 'จุดซักล้าง ตากผ้า', floor: 1, icon: 'washing-machine' },
+    ];
+
+    const DEFAULT_CATEGORIES = {
+      living_room: ['ดูแลเฟอร์นิเจอร์/โซฟา', 'อุปกรณ์ความบันเทิงและสายไฟ', 'กรองอากาศและฝุ่น', 'จัดระเบียบของเล่น/นิตยสาร'],
+      kitchen: ['คราบไขมันและเตา/ฮู้ด', 'สต็อกตู้เย็นและตู้เสบียง', 'ซิงค์ล้างจานและท่อระบาย', 'การจัดการขยะและสุขอนามัย'],
+      downstairs_bath: ['เติมของใช้ส่วนกลาง', 'ฆ่าเชื้อสุขภัณฑ์ประจำวัน', 'พัดลมระบายอากาศและกลิ่น'],
+      office: ['จัดการสายไฟและโต๊ะทำงาน', 'ทำความสะอาดจอ/คีย์บอร์ด', 'คัดแยกและจัดเก็บเอกสาร', 'ไฟส่องสว่าง'],
+      guest_bed_1: ['ซัก/เปลี่ยนชุดเครื่องนอน', 'ระบายอากาศและดูดฝุ่น', 'ตรวจสอบตู้เสื้อผ้าแขก'],
+      guest_bed_2: ['ซัก/เปลี่ยนชุดเครื่องนอน', 'ตรวจเช็กแอร์/ม่าน', 'ชุดของใช้ต้อนรับ (Welcome Kit)'],
+      guest_bath: ['ขจัดคราบกระจก/ฉากกั้น', 'เคลียร์เศษผมและท่อน้ำทิ้ง', 'เติมสบู่/แชมพู/ผ้าเช็ดตัว'],
+      master_bed: ['ดูดไรฝุ่นที่นอน/หมอน', 'จัดระเบียบ Walk-in Closet', 'ฟิลเตอร์แอร์/ฟอกอากาศ', 'โต๊ะเครื่องแป้ง'],
+      master_bath: ['ขจัดคราบหินปูนกระจกและก๊อก', 'ฆ่าเชื้อราตามร่องยาแนว', 'เคาน์เตอร์อ่างล้างหน้า', 'ท่อดักกลิ่น'],
+      laundry: ['ล้างถังเครื่องซักผ้า', 'เติมน้ำยาซักผ้า/ปรับผ้านุ่ม', 'ขัดตะไคร่น้ำพื้น/ผนัง', 'ตรวจเช็กราวตากผ้า']
+    };
+
+    // -------------------------------------------------------------
+    // 2. APPLICATION STATE
+    // -------------------------------------------------------------
+    let state = {
+      currentUser: 'พ่อ',
+      activeRoomFilter: 'all',
+      statusFilter: 'all',
+      tasks: [],
+      categories: JSON.parse(localStorage.getItem('smartHome_customCategories')) || DEFAULT_CATEGORIES,
+      customFloorPlanUrl: localStorage.getItem('smartHome_customFloorPlan') || null,
+      editingTaskId: null,
+      pendingImageBase64: null
+    };
+
+    let zoneChartInstance = null;
+
+    // -------------------------------------------------------------
+    // 3. INITIALIZATION & STORAGE
+    // -------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initRoomDropdowns();
+      loadTasks();
+      initChart();
+      renderTasks();
+      updateDashboardStats();
+      applyFloorPlanImage();
+    });
+
+    function loadTasks() {
+      const localData = localStorage.getItem('smartHome_tasks');
+      if (localData) {
+        try {
+          state.tasks = JSON.parse(localData);
+        } catch(e) {
+          state.tasks = [];
+        }
+      } else {
+        // Sample Initial Task Set
+        state.tasks = [
+          {
+            id: 'demo_1',
+            title: 'ล้างทำความสะอาดแผ่นกรองแอร์ห้องนั่งเล่น',
+            roomId: 'living_room',
+            category: 'กรองอากาศและฝุ่น',
+            dueDate: new Date().toISOString().split('T')[0],
+            priority: 'high',
+            isRecurring: true,
+            recurInterval: 'monthly',
+            assignee: 'พ่อ',
+            completed: false,
+            createdAt: new Date().toISOString(),
+            subtasks: [
+              { id: 'st1', title: 'ถอดแผ่นกรองฝุ่นไปฉีดล้าง', done: true },
+              { id: 'st2', title: 'ผึ่งลมให้แห้งสนิทก่อนใส่กลับ', done: false }
+            ],
+            image: null
+          },
+          {
+            id: 'demo_2',
+            title: 'ล้างถังเครื่องซักผ้าด้วยผงล้างถัง',
+            roomId: 'laundry',
+            category: 'ล้างถังเครื่องซักผ้า',
+            dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+            priority: 'medium',
+            isRecurring: true,
+            recurInterval: 'monthly',
+            assignee: 'แม่',
+            completed: false,
+            createdAt: new Date().toISOString(),
+            subtasks: [
+              { id: 'st3', title: 'เปิดโหมด Tub Clean', done: false },
+              { id: 'st4', title: 'เช็ดขอบยางประตูและถอดตัวดักเศษด้ายออกมาล้าง', done: false }
+            ],
+            image: null
+          }
+        ];
+        saveTasks();
+      }
+    }
+
+    function saveTasks() {
+      localStorage.setItem('smartHome_tasks', JSON.stringify(state.tasks));
+      renderTasks();
+      updateDashboardStats();
+      updateFloorPlanBadges();
+      updateChart();
+    }
+
+    function switchUser(userName) {
+      state.currentUser = userName;
+      document.getElementById('currentUserAvatar').innerText = userName.charAt(0);
+    }
+
+    // -------------------------------------------------------------
+    // 4. UI DROPDOWNS & CATEGORIES
+    // -------------------------------------------------------------
+    function initRoomDropdowns() {
+      const roomSelect = document.getElementById('taskRoom');
+      roomSelect.innerHTML = HOUSE_ROOMS.map(r => `<option value="${r.id}">${r.name} (ชั้น ${r.floor})</option>`).join('');
+      updateCategoryDropdown(HOUSE_ROOMS[0].id);
+    }
+
+    function updateCategoryDropdown(roomId) {
+      const categorySelect = document.getElementById('taskCategory');
+      const cats = state.categories[roomId] || [];
+      categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    function promptAddCategory() {
+      const roomId = document.getElementById('taskRoom').value;
+      const roomObj = HOUSE_ROOMS.find(r => r.id === roomId);
+      const newCat = prompt(`เพิ่มหมวดหมู่ใหม่สำหรับ "${roomObj.name}":`);
+      if (newCat && newCat.trim() !== '') {
+        if (!state.categories[roomId]) state.categories[roomId] = [];
+        state.categories[roomId].push(newCat.trim());
+        localStorage.setItem('smartHome_customCategories', JSON.stringify(state.categories));
+        updateCategoryDropdown(roomId);
+        document.getElementById('taskCategory').value = newCat.trim();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 5. INTERACTIVE FLOOR PLAN & FILTERING
+    // -------------------------------------------------------------
+    function selectRoom(roomId) {
+      state.activeRoomFilter = roomId;
+      const roomObj = HOUSE_ROOMS.find(r => r.id === roomId);
+      document.getElementById('activeFilterLabel').innerText = `ห้อง: ${roomObj.name}`;
+      renderTasks();
+    }
+
+    function clearRoomFilter() {
+      state.activeRoomFilter = 'all';
+      document.getElementById('activeFilterLabel').innerText = 'แสดงทั้งหมด (10 ห้อง)';
+      renderTasks();
+    }
+
+    function setFilterStatus(status) {
+      state.statusFilter = status;
+      ['all', 'pending', 'completed'].forEach(t => {
+        const btn = document.getElementById(`tab_${t}`);
+        if (t === status) {
+          btn.className = "px-3 py-1.5 rounded-lg bg-white shadow-sm text-slate-800 font-semibold";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900";
+        }
+      });
+      renderTasks();
+    }
+
+    function updateFloorPlanBadges() {
+      const today = new Date().toISOString().split('T')[0];
+
+      HOUSE_ROOMS.forEach(room => {
+        const roomTasks = state.tasks.filter(t => t.roomId === room.id && !t.completed);
+        const hasOverdue = roomTasks.some(t => t.dueDate && t.dueDate < today);
+        const badge = document.getElementById(`badge_${room.id}`);
+        const roomBox = document.getElementById(`room_${room.id}`);
+
+        if (badge) {
+          badge.innerText = roomTasks.length;
+        }
+
+        if (roomBox) {
+          // Reset styling
+          roomBox.classList.remove('border-emerald-500', 'border-amber-400', 'border-rose-500', 'bg-emerald-950/40', 'bg-amber-950/40', 'bg-rose-950/40');
+          if (roomTasks.length === 0) {
+            roomBox.classList.add('border-emerald-500/60');
+            if (badge) badge.className = "px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-900/60 text-emerald-300";
+          } else if (hasOverdue) {
+            roomBox.classList.add('border-rose-500', 'bg-rose-950/30');
+            if (badge) badge.className = "px-1.5 py-0.5 rounded-full text-[10px] bg-rose-600 text-white font-bold animate-pulse";
+          } else {
+            roomBox.classList.add('border-amber-400', 'bg-amber-950/20');
+            if (badge) badge.className = "px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-slate-900 font-bold";
+          }
+        }
+      });
+    }
+
+    function uploadFloorPlanPrompt() {
+      document.getElementById('floorPlanFileInput').click();
+    }
+
+    function handleFloorPlanUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        state.customFloorPlanUrl = event.target.result;
+        localStorage.setItem('smartHome_customFloorPlan', state.customFloorPlanUrl);
+        applyFloorPlanImage();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function applyFloorPlanImage() {
+      const img = document.getElementById('customFloorPlanImg');
+      if (state.customFloorPlanUrl) {
+        img.src = state.customFloorPlanUrl;
+        img.classList.remove('hidden');
+      } else {
+        img.classList.add('hidden');
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 6. TASK RENDERING & ACTIONS
+    // -------------------------------------------------------------
+    function renderTasks() {
+      const container = document.getElementById('taskListContainer');
+      const emptyState = document.getElementById('emptyState');
+      const today = new Date().toISOString().split('T')[0];
+
+      let filtered = [...state.tasks];
+
+      if (state.activeRoomFilter !== 'all') {
+        filtered = filtered.filter(t => t.roomId === state.activeRoomFilter);
+      }
+
+      if (state.statusFilter === 'pending') {
+        filtered = filtered.filter(t => !t.completed);
+      } else if (state.statusFilter === 'completed') {
+        filtered = filtered.filter(t => t.completed);
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+      emptyState.classList.add('hidden');
+
+      container.innerHTML = filtered.map(task => {
+        const room = HOUSE_ROOMS.find(r => r.id === task.roomId) || { name: 'ไม่ระบุห้อง' };
+        const isOverdue = !task.completed && task.dueDate && task.dueDate < today;
+        const isToday = !task.completed && task.dueDate && task.dueDate === today;
+
+        // Subtask Progress calculation
+        const subtasks = task.subtasks || [];
+        const completedSubtasks = subtasks.filter(s => s.done).length;
+        const subtaskPercent = subtasks.length > 0 ? Math.round((completedSubtasks / subtasks.length) * 100) : 0;
+
+        return `
+          <div class="bg-white border ${task.completed ? 'border-slate-200 opacity-65 bg-slate-50/60' : isOverdue ? 'border-rose-200 ring-1 ring-rose-300' : 'border-slate-200'} rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
+            <div class="flex items-start justify-between gap-3">
+              
+              <!-- Checkbox & Main Info -->
+              <div class="flex items-start gap-3 flex-1">
+                <button onclick="toggleTaskCompletion('${task.id}')" class="mt-1 w-6 h-6 rounded-lg border ${task.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-slate-400'} flex items-center justify-center transition-all shrink-0">
+                  <i data-lucide="check" class="w-4 h-4"></i>
+                </button>
+
+                <div class="space-y-1.5 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">${room.name}</span>
+                    <span class="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">${task.category}</span>
+                    
+                    ${task.priority === 'high' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700">ด่วนมาก</span>' : ''}
+                    ${task.isRecurring ? `<span class="text-[10px] font-medium px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 flex items-center gap-1"><i data-lucide="repeat" class="w-2.5 h-2.5"></i> ${formatRecurInterval(task.recurInterval)}</span>` : ''}
+                  </div>
+
+                  <h4 class="font-bold text-slate-800 text-sm ${task.completed ? 'line-through text-slate-400' : ''}">${escapeHtml(task.title)}</h4>
+
+                  <!-- Subtasks Checklist Rendering -->
+                  ${subtasks.length > 0 ? `
+                    <div class="mt-2 pt-2 border-t border-slate-100 space-y-1.5 max-w-lg">
+                      <div class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>ขั้นตอนย่อย (${completedSubtasks}/${subtasks.length})</span>
+                        <span>${subtaskPercent}%</span>
+                      </div>
+                      <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: ${subtaskPercent}%"></div>
+                      </div>
+                      <div class="space-y-1 mt-1">
+                        ${subtasks.map((st, idx) => `
+                          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer hover:text-slate-900">
+                            <input type="checkbox" ${st.done ? 'checked' : ''} onchange="toggleSubtask('${task.id}', ${idx})" class="rounded text-blue-600 focus:ring-0">
+                            <span class="${st.done ? 'line-through text-slate-400' : ''}">${escapeHtml(st.title)}</span>
+                          </label>
+                        `).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <!-- Attached Image (if any) -->
+                  ${task.image ? `
+                    <div class="mt-2">
+                      <img src="${task.image}" class="w-24 h-24 object-cover rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:scale-105 transition-transform" onclick="window.open('${task.image}', '_blank')" title="คลิกเพื่อดูรูปขยาย">
+                    </div>
+                  ` : ''}
+
+                  <!-- Date & Assignee Footer -->
+                  <div class="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
+                    <span class="flex items-center gap-1 ${isOverdue ? 'text-rose-600 font-bold' : isToday ? 'text-amber-600 font-bold' : ''}">
+                      <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                      ${task.dueDate ? formatDateTh(task.dueDate) : 'ไม่มีกำหนดส่ง'}
+                      ${isOverdue ? '(เกินกำหนด)' : isToday ? '(ต้องทำวันนี้)' : ''}
+                    </span>
+                    <span class="flex items-center gap-1">
+                      <i data-lucide="user" class="w-3.5 h-3.5"></i> ผู้รับผิดชอบ: <strong class="text-slate-700">${task.assignee}</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action Menu -->
+              <div class="flex items-center gap-1 shrink-0">
+                <button onclick="editTask('${task.id}')" class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg">
+                  <i data-lucide="edit-3" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteTask('${task.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    // -------------------------------------------------------------
+    // 7. TASK CREATION, EDIT & RECURRING ENGINE
+    // -------------------------------------------------------------
+    function openTaskModal(roomId = null) {
+      state.editingTaskId = null;
+      state.pendingImageBase64 = null;
+      document.getElementById('taskForm').reset();
+      document.getElementById('taskModalTitle').innerText = 'เพิ่มรายการงานบ้านใหม่';
+      document.getElementById('subtaskInputsContainer').innerHTML = '';
+      removeTaskImage();
+      toggleRecurringOptions(false);
+
+      if (roomId) {
+        document.getElementById('taskRoom').value = roomId;
+        updateCategoryDropdown(roomId);
+      } else {
+        updateCategoryDropdown(document.getElementById('taskRoom').value);
+      }
+
+      document.getElementById('taskModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeTaskModal() {
+      document.getElementById('taskModal').classList.add('hidden');
+    }
+
+    function addSubtaskInput(value = '') {
+      const container = document.getElementById('subtaskInputsContainer');
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2 subtask-row';
+      div.innerHTML = `
+        <input type="text" value="${escapeHtml(value)}" placeholder="เช่น ฉีดน้ำยาฆ่าเชื้อ, ขัดตะแกรง" class="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <button type="button" onclick="this.parentElement.remove()" class="text-slate-400 hover:text-rose-500 p-1">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      `;
+      container.appendChild(div);
+      lucide.createIcons();
+    }
+
+    function toggleRecurringOptions(checked) {
+      const el = document.getElementById('recurringIntervalWrapper');
+      if (checked) el.classList.remove('hidden');
+      else el.classList.add('hidden');
+    }
+
+    function previewTaskImage(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        state.pendingImageBase64 = event.target.result;
+        document.getElementById('taskImagePreview').src = state.pendingImageBase64;
+        document.getElementById('taskImagePreviewContainer').classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeTaskImage() {
+      state.pendingImageBase64 = null;
+      document.getElementById('taskImageFile').value = '';
+      document.getElementById('taskImagePreviewContainer').classList.add('hidden');
+    }
+
+    function handleSaveTask(e) {
+      e.preventDefault();
+
+      const subtaskNodes = document.querySelectorAll('#subtaskInputsContainer input');
+      const subtasks = Array.from(subtaskNodes)
+        .map(input => input.value.trim())
+        .filter(v => v !== '')
+        .map((title, i) => ({ id: 'st_' + Date.now() + '_' + i, title: title, done: false }));
+
+      const taskData = {
+        title: document.getElementById('taskTitle').value.trim(),
+        roomId: document.getElementById('taskRoom').value,
+        category: document.getElementById('taskCategory').value,
+        dueDate: document.getElementById('taskDueDate').value || null,
+        priority: document.getElementById('taskPriority').value,
+        isRecurring: document.getElementById('taskIsRecurring').checked,
+        recurInterval: document.getElementById('taskRecurInterval').value,
+        assignee: document.getElementById('taskAssignee').value,
+        image: state.pendingImageBase64,
+        subtasks: subtasks
+      };
+
+      if (state.editingTaskId) {
+        // Edit Mode
+        const index = state.tasks.findIndex(t => t.id === state.editingTaskId);
+        if (index !== -1) {
+          state.tasks[index] = {
+            ...state.tasks[index],
+            ...taskData,
+            image: state.pendingImageBase64 !== null ? state.pendingImageBase64 : state.tasks[index].image
+          };
+        }
+      } else {
+        // Create Mode
+        const newTask = {
+          id: 'task_' + Date.now(),
+          ...taskData,
+          completed: false,
+          createdAt: new Date().toISOString()
+        };
+        state.tasks.unshift(newTask);
+      }
+
+      saveTasks();
+      closeTaskModal();
+    }
+
+    function editTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      state.editingTaskId = taskId;
+      document.getElementById('taskModalTitle').innerText = 'แก้ไขรายการงานบ้าน';
+      document.getElementById('taskTitle').value = task.title;
+      document.getElementById('taskRoom').value = task.roomId;
+      updateCategoryDropdown(task.roomId);
+      document.getElementById('taskCategory').value = task.category;
+      document.getElementById('taskDueDate').value = task.dueDate || '';
+      document.getElementById('taskPriority').value = task.priority || 'medium';
+      document.getElementById('taskAssignee').value = task.assignee || 'ส่วนกลาง';
+
+      document.getElementById('taskIsRecurring').checked = !!task.isRecurring;
+      toggleRecurringOptions(!!task.isRecurring);
+      if (task.recurInterval) document.getElementById('taskRecurInterval').value = task.recurInterval;
+
+      // Subtasks
+      const container = document.getElementById('subtaskInputsContainer');
+      container.innerHTML = '';
+      if (task.subtasks) {
+        task.subtasks.forEach(st => addSubtaskInput(st.title));
+      }
+
+      // Image
+      if (task.image) {
+        state.pendingImageBase64 = task.image;
+        document.getElementById('taskImagePreview').src = task.image;
+        document.getElementById('taskImagePreviewContainer').classList.remove('hidden');
+      } else {
+        removeTaskImage();
+      }
+
+      document.getElementById('taskModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function deleteTask(taskId) {
+      if (confirm('ยืนยันลบงานนี้ออกจากระบบ?')) {
+        state.tasks = state.tasks.filter(t => t.id !== taskId);
+        saveTasks();
+      }
+    }
+
+    function toggleSubtask(taskId, subtaskIndex) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (task && task.subtasks && task.subtasks[subtaskIndex]) {
+        task.subtasks[subtaskIndex].done = !task.subtasks[subtaskIndex].done;
+        // If all subtasks are finished, optionally don't auto-complete entire chore, let user confirm
+        saveTasks();
+      }
+    }
+
+    // Recurring Task Engine: When completed, auto-calculate next routine
+    function toggleTaskCompletion(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      task.completed = !task.completed;
+
+      // If finished & it's recurring -> spawn next cycle
+      if (task.completed && task.isRecurring) {
+        const nextDueDate = calculateNextRecurDate(task.dueDate || new Date().toISOString().split('T')[0], task.recurInterval);
+        
+        // Reset subtasks for next cycle
+        const resetSubtasks = (task.subtasks || []).map(st => ({ ...st, done: false }));
+
+        const nextCycleTask = {
+          ...task,
+          id: 'task_' + Date.now(),
+          dueDate: nextDueDate,
+          completed: false,
+          createdAt: new Date().toISOString(),
+          subtasks: resetSubtasks
+        };
+
+        state.tasks.unshift(nextCycleTask);
+        alert(`🎉 ทำงาน "${task.title}" สำเร็จแล้ว!\nระบบได้ตั้งรอบถัดไปในวันที่ ${formatDateTh(nextDueDate)} ให้เรียบร้อยครับ`);
+      }
+
+      saveTasks();
+    }
+
+    function calculateNextRecurDate(baseDateStr, interval) {
+      const d = new Date(baseDateStr);
+      switch(interval) {
+        case 'daily': d.setDate(d.getDate() + 1); break;
+        case 'weekly': d.setDate(d.getDate() + 7); break;
+        case 'biweekly': d.setDate(d.getDate() + 14); break;
+        case 'monthly': d.setMonth(d.getMonth() + 1); break;
+        case 'quarterly': d.setMonth(d.getMonth() + 3); break;
+        default: d.setDate(d.getDate() + 7);
+      }
+      return d.toISOString().split('T')[0];
+    }
+
+    // -------------------------------------------------------------
+    // 8. DASHBOARD METRICS & CHART.JS ANALYTICS
+    // -------------------------------------------------------------
+    function updateDashboardStats() {
+      const total = state.tasks.length;
+      const completed = state.tasks.filter(t => t.completed).length;
+      const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+      
+      const today = new Date().toISOString().split('T')[0];
+      const overdue = state.tasks.filter(t => !t.completed && t.dueDate && t.dueDate < today).length;
+      const dueToday = state.tasks.filter(t => !t.completed && t.dueDate && t.dueDate === today).length;
+      const recurring = state.tasks.filter(t => t.isRecurring).length;
+
+      document.getElementById('statCompletionRate').innerText = `${rate}%`;
+      document.getElementById('statProgressRatio').innerText = `เสร็จ ${completed} จาก ${total} งาน`;
+      document.getElementById('statOverdueCount').innerText = overdue;
+      document.getElementById('statTodayCount').innerText = dueToday;
+      document.getElementById('statRecurringCount').innerText = recurring;
+    }
+
+    function initChart() {
+      const ctx = document.getElementById('zoneChart').getContext('2d');
+      const counts = HOUSE_ROOMS.map(r => state.tasks.filter(t => t.roomId === r.id && !t.completed).length);
+
+      zoneChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: HOUSE_ROOMS.map(r => r.name),
+          datasets: [{
+            data: counts,
+            backgroundColor: [
+              '#3b82f6', '#f59e0b', '#06b6d4', '#6366f1', '#ec4899', 
+              '#d946ef', '#14b8a6', '#8b5cf6', '#a855f7', '#0ea5e9'
+            ],
+            borderWidth: 2,
+            borderColor: '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { boxWidth: 10, font: { family: 'Prompt', size: 10 } }
+            }
+          },
+          cutout: '65%'
+        }
+      });
+    }
+
+    function updateChart() {
+      if (!zoneChartInstance) return;
+      const counts = HOUSE_ROOMS.map(r => state.tasks.filter(t => t.roomId === r.id && !t.completed).length);
+      zoneChartInstance.data.datasets[0].data = counts;
+      zoneChartInstance.update();
+    }
+
+    // -------------------------------------------------------------
+    // 9. FIREBASE REAL-TIME CLOUD CONFIG MODAL
+    // -------------------------------------------------------------
+    function openConfigModal() {
+      const savedConfig = localStorage.getItem('smartHome_firebaseConfig');
+      if (savedConfig) document.getElementById('firebaseConfigInput').value = savedConfig;
+      document.getElementById('configModal').classList.remove('hidden');
+    }
+
+    function closeConfigModal() {
+      document.getElementById('configModal').classList.add('hidden');
+    }
+
+    function saveFirebaseConfig() {
+      const raw = document.getElementById('firebaseConfigInput').value.trim();
+      if (!raw) return;
+      try {
+        JSON.parse(raw);
+        localStorage.setItem('smartHome_firebaseConfig', raw);
+        alert('บันทึกการตั้งค่า Firebase สำเร็จแล้ว! หน้าเว็บจะรีโหลดเพื่อเริ่มต้นซิงก์');
+        location.reload();
+      } catch(err) {
+        alert('รูปแบบ JSON ของ Firebase Config ไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
+      }
+    }
+
+    function clearFirebaseConfig() {
+      localStorage.removeItem('smartHome_firebaseConfig');
+      alert('กลับสู่โหมด Local Storage เรียบร้อยแล้ว');
+      location.reload();
+    }
+
+    // -------------------------------------------------------------
+    // 10. UTILITIES
+    // -------------------------------------------------------------
+    function formatRecurInterval(val) {
+      switch(val) {
+        case 'daily': return 'ทุกวัน';
+        case 'weekly': return 'ทุกสัปดาห์';
+        case 'biweekly': return 'ทุก 2 สัปดาห์';
+        case 'monthly': return 'ทุกเดือน';
+        case 'quarterly': return 'ทุก 3 เดือน';
+        default: return 'ทำซ้ำ';
+      }
+    }
+
+    function formatDateTh(dateStr) {
+      if (!dateStr) return '';
+      const [year, month, day] = dateStr.split('-');
+      const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+      return `${parseInt(day)} ${thMonths[parseInt(month) - 1]} ${parseInt(year) + 543}`;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
